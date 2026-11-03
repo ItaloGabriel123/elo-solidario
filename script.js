@@ -1,4 +1,3 @@
-// Ícones SVG em formato de string para renderização dinâmica
 const icons = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
   heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.7-7.5 1.1-1.1a5.5 5.5 0 0 0 0-7.8Z"/>',
@@ -20,7 +19,6 @@ function icon(name, size = 20) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 }
 
-// Configurações de navegação
 const adminNav = [
   ["Visão geral", "grid"],
   ["Itens necessários", "heart"],
@@ -36,7 +34,6 @@ const donorNav = [
   ["Minhas contribuições", "box"],
 ];
 
-// Dados simulados transformados em variáveis globais para permitir interação e atualização
 let stock = [
   { id: 1, item: "Arroz tipo 1", category: "Alimentos", qty: 142, status: "Estável", tone: "green" },
   { id: 2, item: "Leite integral", category: "Alimentos", qty: 28, status: "Baixo", tone: "orange" },
@@ -51,12 +48,12 @@ let appointmentsData = [
   { id: 4, name: "Amanda Brito", time: "14:30", items: "Alimentos não perecíveis • 8 itens", received: false, color: "purple" },
 ];
 
-// Estado unificado da aplicação
 const state = {
   authenticated: false,
-  role: "doador", // 'admin' ou 'doador'
+  loading: false,
+  role: "doador", 
   page: "Necessidades",
-  mobile: false, // Controle de responsividade do menu
+  mobile: false, 
   notificationOpen: false,
   unread: [0, 1],
   dismissed: [],
@@ -65,7 +62,6 @@ const state = {
   slot: "10:30",
 };
 
-// Componentes da Interface
 function logo() {
   return `<div class="logo"><div class="logo-mark">${icon("heart", 21)}</div><div><b>Elo Solidário</b><span>Central de Doações</span></div></div>`;
 }
@@ -99,7 +95,9 @@ function login() {
             <div class="input-field">${icon("settings", 18)}<input id="password" required type="${state.showPassword ? "text" : "password"}" placeholder="Digite sua senha" /><button type="button" data-action="password">${state.showPassword ? "Ocultar" : "Mostrar"}</button></div>
             <label class="remember"><input type="checkbox" /> Manter-me conectado</label>
             ${state.notice ? `<p class="auth-notice">${state.notice}</p>` : ""}
-            <button class="login-submit" type="submit">Entrar como ${admin ? "administrador" : "doador"} ${icon("arrow", 17)}</button>
+            <button class="login-submit" type="submit" ${state.loading ? "disabled" : ""}>
+              ${state.loading ? "Conectando..." : `Entrar como ${admin ? "administrador" : "doador"} ${icon("arrow", 17)}`}
+            </button>
           </form>
           <div class="divider"><span>ou continue com</span></div>
           <div class="social-login"><button data-action="social"><b>G</b> Google</button><button data-action="social"><b>m</b> Microsoft</button></div>
@@ -157,7 +155,6 @@ function appShell() {
   const nav = admin ? adminNav : donorNav;
   return `
     <div class="app ${state.role}-theme">
-      <!-- O estado mobile controla a classe 'open' para exibir a sidebar em telas menores -->
       <aside class="sidebar ${state.mobile ? "open" : ""}">
         ${logo()}
         <nav>
@@ -182,7 +179,6 @@ function appShell() {
         </header>
         <div class="content">${admin ? adminPage() : donorPage()}</div>
       </main>
-      <!-- Overlay escuro que fecha a sidebar ao ser clicado no mobile -->
       ${state.mobile ? '<div class="scrim" data-action="menu"></div>' : ""}
     </div>`;
 }
@@ -333,19 +329,37 @@ function contributions() {
     <div class="card contributions"><div class="card-head"><div><h2>Histórico</h2><p>Seus agendamentos e entregas recentes</p></div></div>${history.map((item, index) => `<div class="contribution"><div class="date-box"><b>${item[0].split(" ")[0]}</b><span>${item[0].split(" ")[1]}</span></div><div><b>${item[2]}</b><span>Central Elo Solidário • ${item[0]}</span></div><span class="status ${index ? "green" : "blue"}">${item[1]}</span>${icon("arrow", 17)}</div>`).join("")}</div>`;
 }
 
-// Renderização Principal
 function render() {
   document.getElementById("app").innerHTML = state.authenticated ? appShell() : login();
 }
 
-// Delegação de Eventos (Event Listeners)
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
   if (event.target.id === "login-form") {
     event.preventDefault();
-    state.authenticated = true;
-    state.page = state.role === "admin" ? "Visão geral" : "Necessidades";
-    state.notice = "";
+    state.loading = true;
     render();
+
+    try {
+      const response = await fetch("http://localhost:8000/token", {
+        method: "POST",
+        body: new FormData(event.target)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        localStorage.setItem("token", data.access_token);
+        state.authenticated = true;
+        state.page = state.role === "admin" ? "Visão geral" : "Necessidades";
+        state.notice = "";
+      } else {
+        state.notice = "Credenciais inválidas.";
+      }
+    } catch {
+      state.notice = "Erro ao conectar com o servidor.";
+    } finally {
+      state.loading = false;
+      render();
+    }
   }
 });
 
@@ -353,37 +367,31 @@ document.addEventListener("click", (event) => {
   const target = event.target.closest("button, [data-action]");
   if (!target) return;
 
-  // Lógica de alteração de papel na tela de login
   if (target.dataset.role) {
     state.role = target.dataset.role;
     state.notice = "";
   } 
-  // Lógica de descarte de notificações
   else if (target.dataset.notification !== undefined) {
     const index = Number(target.dataset.notification);
     state.unread = state.unread.filter((item) => item !== index);
     state.dismissed.push(index);
     state.page = target.dataset.page;
     state.notificationOpen = false;
-    state.mobile = false; // Fecha menu mobile ao clicar
+    state.mobile = false;
   } 
-  // Roteamento interno (troca de página)
   else if (target.dataset.page) {
     state.page = target.dataset.page;
-    state.mobile = false; // Fecha a sidebar no mobile ao navegar
+    state.mobile = false;
     state.notificationOpen = false;
   } 
-  // Confirmação de recebimento no painel do admin
   else if (target.dataset.confirm) {
     const appointmentId = Number(target.dataset.confirm);
     const appt = appointmentsData.find(a => a.id === appointmentId);
     if (appt) appt.received = true;
   } 
-  // Seleção de slot de horário no painel do doador
   else if (target.dataset.slot && !target.disabled) {
     state.slot = target.dataset.slot;
   } 
-  // Demais ações da interface
   else {
     switch (target.dataset.action) {
       case "password":
@@ -406,9 +414,10 @@ document.addEventListener("click", (event) => {
         state.authenticated = false;
         state.mobile = false;
         state.notice = "";
+        localStorage.removeItem("token");
         break;
       case "menu":
-        state.mobile = !state.mobile; // Toggle da sidebar responsiva
+        state.mobile = !state.mobile;
         break;
       case "notifications":
         state.notificationOpen = !state.notificationOpen;
@@ -422,15 +431,13 @@ document.addEventListener("click", (event) => {
         state.page = state.role === "admin" ? "Agendamentos" : "Minhas contribuições";
         break;
       case "book-slot":
-        state.page = "Minhas contribuições"; // Navega e simula agendamento
+        state.page = "Minhas contribuições";
         break;
       default:
         return;
     }
   }
-  // Sempre reconstruir a interface para refletir o novo estado
   render();
 });
 
-// Primeira renderização
 render();
